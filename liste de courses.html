@@ -287,21 +287,59 @@ Riz saute;Bouillon legume;1 c. à soupe;0.3;Colruyt`;
             return data;
         }
 
-        // Fonction pour sauvegarder l'état de la liste dans le localStorage
-        function saveState() {
-            localStorage.setItem('shoppingListState', JSON.stringify(shoppingList));
-        }
+       // MODIFIER saveState()
+async function saveState() {
+    try {
+        // Sauvegarde le tableau d'articles dans un document Firestore
+        // 'lists' est le nom de la collection, 'myShoppingList' est l'ID du document
+        await db.collection('lists').doc('myShoppingList').set({
+            items: shoppingList // 'items' est le nom du champ qui contiendra votre liste
+        });
+        console.log("Liste sauvegardée sur Firestore !");
+    } catch (error) {
+        console.error("Erreur de sauvegarde Firestore:", error);
+        // Fallback en cas d'erreur Firestore (par exemple, si les règles ne sont pas bonnes)
+        // Cela permet de sauvegarder localement si Firestore ne fonctionne pas.
+        localStorage.setItem('shoppingListState', JSON.stringify(shoppingList));
+        console.log("Sauvegarde fallback sur localStorage.");
+    }
+}
 
-        // Fonction pour charger l'état de la liste depuis le localStorage
-        function loadState() {
+        // MODIFIER loadState()
+async function loadState() {
+    try {
+        // Tente de charger le document 'myShoppingList' de la collection 'lists'
+        const doc = await db.collection('lists').doc('myShoppingList').get();
+        if (doc.exists && doc.data().items) {
+            // Si le document existe et contient des 'items', charge-les
+            shoppingList = doc.data().items;
+            console.log("Liste chargée depuis Firestore !");
+        } else {
+            // Si le document n'existe pas ou est vide dans Firestore,
+            // on essaie de charger depuis localStorage (pour les anciennes sauvegardes locales)
             const savedState = localStorage.getItem('shoppingListState');
             if (savedState) {
                 shoppingList = JSON.parse(savedState);
+                console.log("Initialisation depuis localStorage.");
             } else {
-                // Si aucune sauvegarde n'existe, parse les données CSV initiales
+                // Si rien n'existe nulle part, initialiser avec les données du CSV
                 shoppingList = parseCSV(csvData);
+                console.log("Initialisation de la liste depuis le CSV.");
             }
         }
+    } catch (error) {
+        console.error("Erreur de chargement Firestore:", error);
+        // En cas d'erreur lors de l'accès à Firestore, on essaie aussi le localStorage
+        const savedState = localStorage.getItem('shoppingListState');
+        if (savedState) {
+            shoppingList = JSON.parse(savedState);
+            console.log("Liste chargée depuis localStorage (fallback).");
+        } else {
+            shoppingList = parseCSV(csvData);
+            console.log("Initialisation de la liste depuis le CSV (fallback).");
+        }
+    }
+}
 
         // Fonction pour rendre la liste dans le DOM
         function renderList() {
@@ -639,6 +677,26 @@ Riz saute;Bouillon legume;1 c. à soupe;0.3;Colruyt`;
             document.body.appendChild(modalOverlay);
         }
 
+
+// AJOUTER la synchronisation en temps réel
+// Cela mettra à jour la liste automatiquement sur tous les appareils si elle change dans Firestore
+db.collection('lists').doc('myShoppingList')
+  .onSnapshot((doc) => {
+      if (doc.exists && doc.data().items) {
+          const newShoppingList = doc.data().items;
+          // Mettre à jour seulement si la liste a réellement changé
+          // (pour éviter des re-rendus inutiles si c'est la même liste)
+          if (JSON.stringify(newShoppingList) !== JSON.stringify(shoppingList)) {
+              shoppingList = newShoppingList;
+              populateFilterOptions(); // Re-peuple les options de filtre au cas où de nouveaux plats sont ajoutés
+              renderList(); // Re-dessine la liste avec les nouvelles données
+              console.log("Liste mise à jour en temps réel depuis Firestore !");
+          }
+      }
+  }, (error) => {
+      console.error("Erreur de synchronisation en temps réel:", error);
+  });
+
         // Initialisation de l'application au chargement de la page
         window.onload = () => {
             loadState(); // Charge l'état sauvegardé ou les données initiales
@@ -646,5 +704,41 @@ Riz saute;Bouillon legume;1 c. à soupe;0.3;Colruyt`;
             renderList(); // Affiche la liste
         };
     </script>
+
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+
+<script>
+  // Votre objet de configuration Firebase (COLLER ICI LE CODE COPIÉ À L'ÉTAPE 2.1.4)
+  const firebaseConfig = {
+   // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyD3zt5daCQbz9sDtbRx6HGqSj4cozb4TR8",
+  authDomain: "ma-liste-de-courses-synchro.firebaseapp.com",
+  projectId: "ma-liste-de-courses-synchro",
+  storageBucket: "ma-liste-de-courses-synchro.firebasestorage.app",
+  messagingSenderId: "152327172776",
+  appId: "1:152327172776:web:6bc657ec00bbac660c489d",
+  measurementId: "G-KYJB74EN7S"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+  };
+
+  // Initialiser Firebase et obtenir les références à la base de données
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const auth = firebase.auth(); // Référence à l'authentification
+</script>
 </body>
 </html>
