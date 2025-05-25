@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ma Liste de Courses</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Couleur de fond légère */
+            color: #334155; /* Couleur de texte principale */
+        }
+        /* Style pour les cases à cocher personnalisées */
+        input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 2px solid #6b7280; /* Couleur de la bordure */
+            border-radius: 0.375rem; /* Coins arrondis */
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        input[type="checkbox"]:checked {
+            background-color: #10b981; /* Vert émeraude pour coché */
+            border-color: #10b981;
+        }
+        input[type="checkbox"]:checked::after {
+            content: '✔'; /* Coche Unicode */
+            color: white;
+            font-size: 1rem;
+        }
+        .item-checked .product-name {
+            text-decoration: line-through;
+            color: #94a3b8; /* Texte grisé pour les articles cochés */
+        }
+        /* Style pour les champs éditables */
+        .editable-field {
+            outline: none;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            padding: 0.25rem 0.5rem;
+            transition: border-color 0.2s;
+        }
+        .editable-field:hover {
+            border-color: #cbd5e1; /* Bordure légère au survol */
+        }
+        .editable-field:focus {
+            border-color: #3b82f6; /* Bordure bleue au focus */
+            background-color: #f8fafc; /* Fond légèrement plus clair au focus */
+        }
+        /* Styles pour les suggestions d'autocomplétion */
+        .autocomplete-suggestions {
+            border: 1px solid #e2e8f0;
+            border-top: none;
+            max-height: 150px;
+            overflow-y: auto;
+            position: absolute;
+            z-index: 10;
+            background-color: white;
+            width: calc(100% - 0.5rem); /* Ajuste la largeur pour correspondre à l'input */
+            border-radius: 0 0 0.375rem 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .suggestion-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .suggestion-item:hover {
+            background-color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+        <h1 class="text-3xl sm:text-4xl font-bold text-center mb-8 text-gray-800">Ma Liste de Courses</h1>
+
+        <div class="mb-6 p-4 bg-blue-50 rounded-lg shadow-inner">
+            <h2 class="text-xl font-semibold mb-3 text-blue-800">Ajouter un nouveau produit</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                <input type="text" id="new-product-name" placeholder="Nom du produit" class="p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500">
+                <input type="text" id="new-product-quantity" placeholder="Quantité" class="p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500">
+                <div class="relative"> <input type="text" id="new-product-plat" placeholder="Plat (ex: Déjeuner 1)" class="p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 w-full">
+                    <div id="plat-suggestions" class="autocomplete-suggestions hidden"></div>
+                </div>
+                <div class="relative"> <input type="text" id="new-product-magasin" placeholder="Magasin" class="p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 w-full">
+                    <div id="magasin-suggestions" class="autocomplete-suggestions hidden"></div>
+                </div>
+            </div>
+            <button id="add-product-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-300">
+                Ajouter le produit
+            </button>
+        </div>
+
+        <div class="mb-6">
+            <label for="plat-filter" class="block text-gray-700 text-sm font-bold mb-2">Filtrer par Plat:</label>
+            <select id="plat-filter" class="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                <option value="all">Tous les plats</option>
+                </select>
+        </div>
+
+        <div id="shopping-list-container" class="space-y-4">
+            <p class="text-center text-gray-500" id="loading-message">Chargement de votre liste...</p>
+        </div>
+
+        <button id="clear-all-button" class="mt-8 w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:-translate-y-1">
+            Réinitialiser la liste (décocher tout)
+        </button>
+    </div>
+
+    <script>
+        // Données brutes du CSV (obtenues via content_fetcher)
+        const csvData = `Categorie;Produit;Quantite;Prix estime (€);Magasin
+Petit-dejeuner 1 / proteines;Œufs bio;12;5.0;Colruyt
+Petit-dejeuner 1 / fruits;Avocats;3;3.6;Carrefour
+Petit-dejeuner 1  / proteines;Parmesan bloc;200 g;4.0;Colruyt
+Petit-dejeuner 1 / legumes;Champignons frais;300 g;1.5;Colruyt
+Petit-dejeuner 1  / herbes;Persil;1 botte;1.4;Colruyt
+Petit-dejeuner 2 / fruits;Mangue mure;2;3.2;Carrefour
+Petit-dejeuner 2 / fruits;Fruits bleus (myrtilles, mures);250 g;3.8;Colruyt
+Petit-dejeuner 2 / fruits;Yaourt grec;200 g;1.6;Colruyt
+Petit-dejeuner 2 / noix;;;;Colruyt
+Petit-dejeuner 2 / graines;Mix graines (lin, chia, tournesol, courge);150 g;2.5;Bio / vrac
+Petit-dejeuner 2 / epices;Cannelle + cardamome moulues;1 pot;2.9;Bio
+Petit dejeuner 3 / jus;Jus de pomme bio;1 L;2.4;Colruyt
+Petit-dejeuner 3 / fruits;Smoothie kiwi-banane;3 kiwis + 2 bananes;2.2;Colruyt
+Dejeuner 1 / feculents;Patates douces;400 g;1.5;Colruyt
+Dejeuner 1 / proteines;Bœuf hache;400 g;5.0;Colruyt
+Dejeuner 1 / legumineuses;Conserve Chili;1 boîte;2.5;Colruyt
+Dejeuner 2 / feculents;Riz semi-complet;300 g;1.2;Colruyt
+Dejeuner 2 / legumineuses;Lentilles corail;200 g;1.5;Colruyt
+Dejeuner / proteines;Œufs;4;2.0;Colruyt
+Dejeuner 3 / proteines;Sardines a l’huile d’olive;2 boîtes;2.6;Colruyt
+Dejeuner 3 / Foccacia;Olives;;;
+Dejeuner 3 / legumes;Legumes rotis (carottes, courgette, fenouil...);800 g;4.0;Colruyt
+Dejeuner 2 / charcuterie;Endouillat ou 'Nduja;60 g;2.5;Italien / epicerie fine
+Dejeuner 2 / lait de coco;Creme de coco;200 ml;1.5;Colruyt
+Dejeuner 2 / sauce tomate;Puree de tomate;400 g;1.2;Colruyt
+condiments;Citron;4;1.0;Colruyt
+condiments;Echalote;3;0.9;Colruyt
+Herbes & aromatiques;Coriandre frais;1 botte;1.5;Colruyt
+Bone Broth;Os a moelle bœuf;500 g;3.5;Boucherie
+Bone Broth;Celeri;1 branche;0.9;Colruyt
+Bone Broth;Oignon rouge;3;1.2;Colruyt
+Bone Broth;Brocoli;1 tête;2.2;Colruyt
+condiments;Ail;1 tête;1.0;Colruyt
+condiments;huile d'olive;;;
+Diner 3 Soir ;Tomates cerises;200 g;2.4;Colruyt
+Diner 3 Soir;Mozzarella di Buffala;2 boules;3.6;Colruyt
+Diner 2/3  Tapenade;Feta;1 bloc;;
+Tapenade;Betterave;2;1.2;Colruyt
+Diner 1 Soir;Pois chiches;1 boîte;1.2;Colruyt
+Diner 1 Soir;Tahini;100 g;2.5;Epicerie orientale
+Diner 2 Soir;Poivrons;1;1.3;Colruyt
+Boisson;Kefir d’eau maison (sucre + figues + citron);1 L / jour;;Ingredients
+Boisson;Bissap sec (hibiscus);30 g;1.5;Magasin africain
+Boisson  / legumes ;Tra Atiso (artichaut);1 artichuat;3.0;Epicerie asiatique
+Fruits;baies de goji;;4.5;Colruyt
+Fruits;Ananas;;2.5;Carrefour
+Snack;Popcorn;;;Colruyt
+Legumes Dips;Carottes/Concombres/choufleur;;3.0;
+;;;9.850.000.000.000.000;
+;;;;
+;;total colruyt : ;;
+Focaccia;Farine T65 ou T80;400 g;1.8;Bio vrac
+Focaccia;Levain actif;100 g;1.5;Bio vrac
+Focaccia;Eau;260 ml;0.2;Bio vrac
+Focaccia;Sel;8 g;0.1;Bio vrac
+Focaccia;Huile d’olive;5 c. à soupe;1.5;Bio vrac
+Focaccia;Fleur de sel;1 pincée;0.2;Bio vrac
+Houmous;Pois chiches cuits;250 g;1.3;Colruyt
+Houmous;Cumin;1 c. à café;0.5;Colruyt
+Houmous;Paprika;1/2 c. à café;0.5;Colruyt
+Tapenade betterave;Betterave cuite;200 g;1.2;Colruyt
+Tapenade betterave;Noix;30 g;1.5;Colruyt
+Tapenade poivron;Poivrons rouges;2;1.2;Colruyt
+Tapenade poivron;Huile d’olive;2 c. à soupe;1.2;Colruyt
+Bone broth;Carottes;2;0.6;Colruyt
+Bone broth;Oignon;2;0.5;Colruyt
+Bone broth;Vinaigre de cidre;1 c. à soupe;1.2;Colruyt
+Bone broth;Clous de girofle;2;0.4;Colruyt
+Bone broth;Romarin;1 branche;0.5;Colruyt
+Bone broth;Algue kombu;1 morceau;1.2;Colruyt
+Boissons;Chlorella poudre;50 g;5.0;Boutique en ligne
+Boissons;The atiso;1 boîte;2.5;Magasin asiatique
+Boissons;Infusion camomille;1 boîte;2.0;Bio
+Boissons;Infusion tulsi;1 boîte;2.0;Bio
+Boissons;Eau de coco;500 ml;2.5;Colruyt
+Boissons;Bissap;1 bouteille;2.5;Magasin africain
+Boissons;Jus de citron;3;1.2;Colruyt
+Boissons;Miel;1 pot;4.5;Colruyt
+;;;;
+Total Energie stable;;;2.0;
+Total Microbiote;;;7.4;
+Total Hydratation;;;22.2;
+Total general;;;236.3;
+Salsa tex mex;Tomates;2;1.2;Colruyt
+Salsa tex mex;Oignon rouge;1;0.8;Colruyt
+Salsa tex mex;Piment rouge;1;0.6;Colruyt
+Salsa tex mex;Ail;1 gousse;0.5;Colruyt
+Salsa tex mex;Citron vert;1;0.6;Colruyt
+Salsa tex mex;Sel non raffine;1 c. à café;0.1;Colruyt
+Rillettes sardines;Sardines en conserve;1 boite;1.5;Colruyt
+Rillettes sardines;Fromage frais type Philadelphia;100 g;1.4;Colruyt
+Rillettes sardines;Citron;1/2 citron;0.6;Colruyt
+Rillettes sardines;Echalote;1 petite;0.6;Colruyt
+Rillettes sardines;Persil;quelques brins;0.8;Colruyt
+Riz saute;Riz cuit (jasmin ou basmati);120 g;0.5;Colruyt
+Riz saute;Oeufs;2;1.0;Colruyt
+Riz saute;Echalote;1 petite;0.6;Colruyt
+Riz saute;Cebette;1;0.6;Colruyt
+Riz saute;Sauce soja;1 c. à soupe;0.5;Colruyt
+Riz saute;Huile de sesame;1 c. à café;0.4;Colruyt
+Riz saute;Ail;1/2 gousse;0.2;Colruyt
+Riz saute;Bouillon legume;1 c. à soupe;0.3;Colruyt`;
+
+        let shoppingList = []; // Tableau pour stocker les articles de la liste
+        let currentFilter = 'all'; // 'all' ou un nom de plat spécifique
+
+        // Fonction pour parser les données CSV
+        function parseCSV(csv) {
+            const lines = csv.split('\n').filter(line => line.trim() !== ''); // Divise par ligne et filtre les lignes vides
+            const headers = lines[0].split(';'); // Récupère les en-têtes
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(';');
+                if (values.length !== headers.length) {
+                    // Gère les lignes mal formées ou vides qui ne correspondent pas aux en-têtes
+                    continue;
+                }
+                let item = {};
+                headers.forEach((header, index) => {
+                    item[header.trim()] = values[index] ? values[index].trim() : ''; // Assure que les valeurs sont propres
+                });
+
+                // Tente d'inférer le "Plat" basé sur la catégorie ou le produit
+                let plat = 'Général';
+                const category = item['Categorie'] ? item['Categorie'].toLowerCase() : '';
+                const product = item['Produit'] ? item['Produit'].toLowerCase() : '';
+
+                if (category.startsWith('petit-dejeuner')) {
+                    plat = 'Petit-déjeuner';
+                } else if (category.startsWith('dejeuner')) {
+                    plat = 'Déjeuner';
+                } else if (category.startsWith('diner')) {
+                    plat = 'Dîner';
+                } else if (category.includes('boisson')) {
+                    plat = 'Boisson';
+                } else if (category.includes('fruits')) {
+                    plat = 'Fruits';
+                } else if (category.includes('snack')) {
+                    plat = 'Snack';
+                } else if (category.includes('legumes dips')) {
+                    plat = 'Légumes / Dips';
+                } else if (category.includes('condiments')) {
+                    plat = 'Condiments';
+                } else if (category.includes('herbes & aromatiques')) {
+                    plat = 'Herbes & Aromatiques';
+                } else if (category.includes('bone broth')) {
+                    plat = 'Bouillon d\'Os';
+                } else if (category.includes('focaccia')) {
+                    plat = 'Focaccia';
+                } else if (category.includes('houmous')) {
+                    plat = 'Houmous';
+                } else if (category.includes('tapenade')) {
+                    plat = 'Tapenade';
+                } else if (category.includes('salsa tex mex')) {
+                    plat = 'Salsa Tex Mex';
+                } else if (category.includes('rillettes sardines')) {
+                    plat = 'Rillettes Sardines';
+                } else if (category.includes('riz saute')) {
+                    plat = 'Riz Sauté';
+                }
+
+                item.Plat = plat; // Ajoute la nouvelle colonne "Plat"
+                item.checked = false; // Ajoute l'état de la case à cocher
+                data.push(item);
+            }
+            return data;
+        }
+
+        // Fonction pour sauvegarder l'état de la liste dans le localStorage
+        function saveState() {
+            localStorage.setItem('shoppingListState', JSON.stringify(shoppingList));
+        }
+
+        // Fonction pour charger l'état de la liste depuis le localStorage
+        function loadState() {
+            const savedState = localStorage.getItem('shoppingListState');
+            if (savedState) {
+                shoppingList = JSON.parse(savedState);
+            } else {
+                // Si aucune sauvegarde n'existe, parse les données CSV initiales
+                shoppingList = parseCSV(csvData);
+            }
+        }
+
+        // Fonction pour rendre la liste dans le DOM
+        function renderList() {
+            const container = document.getElementById('shopping-list-container');
+            container.innerHTML = ''; // Vide le conteneur avant de le remplir
+
+            const filteredList = shoppingList.filter(item =>
+                currentFilter === 'all' || item.Plat === currentFilter
+            );
+
+            if (filteredList.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500">Aucun article ne correspond à ce filtre ou votre liste est vide.</p>';
+                return;
+            }
+
+            filteredList.forEach((item, index) => {
+                // Trouver l'index original dans la liste non filtrée pour les opérations de suppression
+                const originalIndex = shoppingList.indexOf(item);
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = `flex flex-col sm:flex-row items-start sm:items-center p-4 bg-gray-50 rounded-lg shadow-sm transition-all duration-200 ${item.checked ? 'item-checked opacity-75' : ''}`;
+                itemDiv.dataset.originalIndex = originalIndex; // Stocke l'index original pour faciliter la mise à jour et la suppression
+
+                itemDiv.innerHTML = `
+                    <div class="flex items-center mb-2 sm:mb-0 sm:mr-4">
+                        <input type="checkbox" class="cursor-pointer" ${item.checked ? 'checked' : ''}>
+                    </div>
+                    <div class="flex-1 w-full sm:w-auto">
+                        <p class="product-name text-lg font-semibold text-gray-700">${item['Produit'] || 'Article Inconnu'}</p>
+                        <p class="text-sm text-gray-500">
+                            <span class="font-medium">Quantité:</span> <span class="editable-field" contenteditable="true" data-field="Quantite">${item['Quantite'] || '-'}</span>
+                            ${item['Prix estime (€)'] ? `<span class="ml-2 font-medium">Prix estimé:</span> ${item['Prix estime (€)']}€` : ''}
+                            <span class="ml-2 font-medium">Magasin:</span> <span class="editable-field" contenteditable="true" data-field="Magasin">${item['Magasin'] || '-'}</span>
+                        </p>
+                        <p class="text-sm text-gray-500 mt-1">
+                            <span class="font-medium">Plat:</span>
+                            <span class="editable-field" contenteditable="true" data-field="Plat">${item.Plat || 'Non spécifié'}</span>
+                        </p>
+                    </div>
+                    <button class="delete-item-button text-red-500 hover:text-red-700 ml-auto p-1 rounded-full hover:bg-red-100 transition duration-200" title="Supprimer l'article">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm2 3a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                `;
+                container.appendChild(itemDiv);
+            });
+
+            // Ajout des écouteurs d'événements après le rendu
+            addEventListeners();
+        }
+
+        // Fonction pour ajouter les écouteurs d'événements aux éléments de la liste
+        function addEventListeners() {
+            document.querySelectorAll('#shopping-list-container input[type="checkbox"]').forEach(checkbox => {
+                checkbox.onchange = (event) => {
+                    const itemDiv = event.target.closest('div[data-original-index]');
+                    const originalIndex = parseInt(itemDiv.dataset.originalIndex);
+                    shoppingList[originalIndex].checked = event.target.checked;
+                    itemDiv.classList.toggle('item-checked', event.target.checked);
+                    saveState();
+                };
+            });
+
+            document.querySelectorAll('#shopping-list-container .editable-field').forEach(field => {
+                field.onblur = (event) => {
+                    const itemDiv = event.target.closest('div[data-original-index]');
+                    const originalIndex = parseInt(itemDiv.dataset.originalIndex);
+                    const fieldName = event.target.dataset.field;
+                    shoppingList[originalIndex][fieldName] = event.target.innerText.trim();
+                    saveState();
+                    populateFilterOptions(); // Mettre à jour les options de filtre si un plat a été modifié
+                };
+                // Empêche la propagation du clic pour ne pas déclencher d'autres événements si l'on clique sur le texte éditable
+                field.onclick = (event) => {
+                    event.stopPropagation();
+                };
+            });
+
+            document.querySelectorAll('.delete-item-button').forEach(button => {
+                button.onclick = (event) => {
+                    const itemDiv = event.target.closest('div[data-original-index]');
+                    const originalIndex = parseInt(itemDiv.dataset.originalIndex);
+                    
+                    showCustomModal('Confirmer la suppression', 'Voulez-vous vraiment supprimer cet article de la liste ?', () => {
+                        shoppingList.splice(originalIndex, 1); // Supprime l'élément du tableau
+                        saveState();
+                        populateFilterOptions(); // Mettre à jour les options de filtre après suppression
+                        renderList(); // Re-render la liste
+                    });
+                };
+            });
+        }
+
+        // Fonction pour ajouter un nouveau produit
+        document.getElementById('add-product-button').addEventListener('click', () => {
+            const productNameInput = document.getElementById('new-product-name');
+            const productQuantityInput = document.getElementById('new-product-quantity');
+            const productPlatInput = document.getElementById('new-product-plat');
+            const productMagasinInput = document.getElementById('new-product-magasin');
+
+            const productName = productNameInput.value.trim();
+            const productQuantity = productQuantityInput.value.trim();
+            const productPlat = productPlatInput.value.trim();
+            const productMagasin = productMagasinInput.value.trim();
+
+            if (productName) {
+                const newItem = {
+                    'Categorie': 'Ajouté', // Catégorie par défaut pour les nouveaux articles
+                    'Produit': productName,
+                    'Quantite': productQuantity || '',
+                    'Prix estime (€)': '',
+                    'Magasin': productMagasin || '',
+                    'Plat': productPlat || 'Général',
+                    'checked': false
+                };
+                shoppingList.push(newItem);
+                saveState();
+                populateFilterOptions(); // Mettre à jour les options de filtre après ajout
+                renderList();
+
+                // Réinitialiser les champs du formulaire
+                productNameInput.value = '';
+                productQuantityInput.value = '';
+                productPlatInput.value = '';
+                productMagasinInput.value = '';
+                hidePlatSuggestions(); // Cache les suggestions de plat après l'ajout
+                hideMagasinSuggestions(); // Cache les suggestions de magasin après l'ajout
+            } else {
+                showCustomModal('Erreur d\'ajout', 'Veuillez saisir au moins le nom du produit.');
+            }
+        });
+
+        // Fonction pour peupler les options du filtre de plat
+        function populateFilterOptions() {
+            const filterSelect = document.getElementById('plat-filter');
+            filterSelect.innerHTML = '<option value="all">Tous les plats</option>'; // Réinitialise les options
+
+            const uniquePlats = new Set();
+            shoppingList.forEach(item => {
+                if (item.Plat) {
+                    uniquePlats.add(item.Plat);
+                }
+            });
+
+            Array.from(uniquePlats).sort().forEach(plat => {
+                const option = document.createElement('option');
+                option.value = plat;
+                option.textContent = plat;
+                filterSelect.appendChild(option);
+            });
+
+            // S'assure que le filtre actuel est toujours sélectionné
+            filterSelect.value = currentFilter;
+        }
+
+        // Logique d'autocomplétion pour le champ "Plat"
+        const newProductPlatInput = document.getElementById('new-product-plat');
+        const platSuggestionsContainer = document.getElementById('plat-suggestions');
+
+        function getUniquePlats() {
+            const plats = new Set();
+            shoppingList.forEach(item => {
+                if (item.Plat && item.Plat.trim() !== '') {
+                    plats.add(item.Plat.trim());
+                }
+            });
+            return Array.from(plats).sort();
+        }
+
+        function showPlatSuggestions() {
+            const inputValue = newProductPlatInput.value.toLowerCase();
+            const uniquePlats = getUniquePlats();
+            platSuggestionsContainer.innerHTML = ''; // Vide les suggestions précédentes
+
+            if (inputValue.length === 0) {
+                hidePlatSuggestions();
+                return;
+            }
+
+            const filteredPlats = uniquePlats.filter(plat =>
+                plat.toLowerCase().includes(inputValue)
+            );
+
+            if (filteredPlats.length > 0) {
+                filteredPlats.forEach(plat => {
+                    const suggestionItem = document.createElement('div');
+                    suggestionItem.className = 'suggestion-item';
+                    suggestionItem.textContent = plat;
+                    suggestionItem.addEventListener('mousedown', (e) => { // Utilise mousedown pour éviter le blur avant le clic
+                        e.preventDefault(); // Empêche le blur de se produire avant le clic
+                        newProductPlatInput.value = plat;
+                        hidePlatSuggestions();
+                    });
+                    platSuggestionsContainer.appendChild(suggestionItem);
+                });
+                platSuggestionsContainer.classList.remove('hidden');
+            } else {
+                hidePlatSuggestions();
+            }
+        }
+
+        function hidePlatSuggestions() {
+            platSuggestionsContainer.classList.add('hidden');
+        }
+
+        newProductPlatInput.addEventListener('input', showPlatSuggestions);
+        newProductPlatInput.addEventListener('focus', showPlatSuggestions); // Afficher les suggestions au focus
+        newProductPlatInput.addEventListener('blur', () => {
+            // Ajoute un petit délai pour permettre au clic sur une suggestion d'être traité
+            setTimeout(hidePlatSuggestions, 100);
+        });
+
+
+        // Logique d'autocomplétion pour le champ "Magasin"
+        const newProductMagasinInput = document.getElementById('new-product-magasin');
+        const magasinSuggestionsContainer = document.getElementById('magasin-suggestions');
+
+        function getUniqueMagasins() {
+            const magasins = new Set();
+            shoppingList.forEach(item => {
+                if (item.Magasin && item.Magasin.trim() !== '') {
+                    magasins.add(item.Magasin.trim());
+                }
+            });
+            return Array.from(magasins).sort();
+        }
+
+        function showMagasinSuggestions() {
+            const inputValue = newProductMagasinInput.value.toLowerCase();
+            const uniqueMagasins = getUniqueMagasins();
+            magasinSuggestionsContainer.innerHTML = ''; // Vide les suggestions précédentes
+
+            if (inputValue.length === 0) {
+                hideMagasinSuggestions();
+                return;
+            }
+
+            const filteredMagasins = uniqueMagasins.filter(magasin =>
+                magasin.toLowerCase().includes(inputValue)
+            );
+
+            if (filteredMagasins.length > 0) {
+                filteredMagasins.forEach(magasin => {
+                    const suggestionItem = document.createElement('div');
+                    suggestionItem.className = 'suggestion-item';
+                    suggestionItem.textContent = magasin;
+                    suggestionItem.addEventListener('mousedown', (e) => { // Utilise mousedown pour éviter le blur avant le clic
+                        e.preventDefault(); // Empêche le blur de se produire avant le clic
+                        newProductMagasinInput.value = magasin;
+                        hideMagasinSuggestions();
+                    });
+                    magasinSuggestionsContainer.appendChild(suggestionItem);
+                });
+                magasinSuggestionsContainer.classList.remove('hidden');
+            } else {
+                hideMagasinSuggestions();
+            }
+        }
+
+        function hideMagasinSuggestions() {
+            magasinSuggestionsContainer.classList.add('hidden');
+        }
+
+        newProductMagasinInput.addEventListener('input', showMagasinSuggestions);
+        newProductMagasinInput.addEventListener('focus', showMagasinSuggestions); // Afficher les suggestions au focus
+        newProductMagasinInput.addEventListener('blur', () => {
+            // Ajoute un petit délai pour permettre au clic sur une suggestion d'être traité
+            setTimeout(hideMagasinSuggestions, 100);
+        });
+
+        // Écouteur pour le changement de filtre de plat
+        document.getElementById('plat-filter').addEventListener('change', (event) => {
+            currentFilter = event.target.value;
+            renderList(); // Re-render la liste avec le nouveau filtre
+        });
+
+        // Écouteur pour le bouton de réinitialisation
+        document.getElementById('clear-all-button').addEventListener('click', () => {
+            // Utilise une modale personnalisée au lieu de confirm()
+            showCustomModal('Confirmer la réinitialisation', 'Voulez-vous vraiment décocher tous les articles et réinitialiser la liste ?', () => {
+                shoppingList.forEach(item => item.checked = false);
+                saveState();
+                renderList();
+            });
+        });
+
+        // Fonction pour afficher une modale personnalisée (remplace alert/confirm)
+        function showCustomModal(title, message, onConfirm) {
+            // Crée le fond sombre de la modale
+            const modalOverlay = document.createElement('div');
+            modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+
+            // Crée le conteneur de la modale
+            const modalContent = document.createElement('div');
+            modalContent.className = 'bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center';
+
+            // Ajoute le titre
+            const modalTitle = document.createElement('h3');
+            modalTitle.className = 'text-xl font-bold mb-4 text-gray-800';
+            modalTitle.textContent = title;
+
+            // Ajoute le message
+            const modalMessage = document.createElement('p');
+            modalMessage.className = 'mb-6 text-gray-600';
+            modalMessage.textContent = message;
+
+            // Crée les boutons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'flex justify-around space-x-4';
+
+            const confirmButton = document.createElement('button');
+            confirmButton.className = 'bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-300';
+            confirmButton.textContent = 'Confirmer';
+            confirmButton.onclick = () => {
+                if (onConfirm) onConfirm();
+                modalOverlay.remove();
+            };
+
+            const cancelButton = document.createElement('button');
+            cancelButton.className = 'bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg transition duration-300';
+            cancelButton.textContent = 'Annuler';
+            cancelButton.onclick = () => {
+                modalOverlay.remove();
+            };
+
+            buttonContainer.appendChild(cancelButton);
+            buttonContainer.appendChild(confirmButton);
+
+            modalContent.appendChild(modalTitle);
+            modalContent.appendChild(modalMessage);
+            modalContent.appendChild(buttonContainer);
+            modalOverlay.appendChild(modalContent);
+
+            document.body.appendChild(modalOverlay);
+        }
+
+        // Initialisation de l'application au chargement de la page
+        window.onload = () => {
+            loadState(); // Charge l'état sauvegardé ou les données initiales
+            populateFilterOptions(); // Peuple les options de filtre
+            renderList(); // Affiche la liste
+        };
+    </script>
+</body>
+</html>
